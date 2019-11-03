@@ -3,12 +3,25 @@ var fs = require('fs');
 var recursive = require('recursive-readdir');
 var lineReader = require('line-reader');
 var inquirer = require('inquirer');
+var yargs = require('yargs');
 const process = require('process');
 let configPath = './.asset-config.json';
 
-function createAWSSecretQ(){
+function parseArgs(){
+  return yargs.option(
+    'reconfig',{
+      alias: 'r',
+      describe: 'reconfigure the config file',
+      type: 'boolean'
+    }
+  ).argv
+}
+
+function createAWSSecretQ(d){
   return {
-    type: 'input', name: 'aws_secret', message:'Provide AWS_SECRET:',
+    type: 'input', name: 'aws_secret',
+    message:'Provide AWS_SECRET:',
+    default: d,
     validate: function(value){
       let regex = /[A-Za-z0-9/+=]{40}(?![A-Za-z0-9/+=])/;
       var pass = value.match(regex);
@@ -20,9 +33,11 @@ function createAWSSecretQ(){
   }
 }
 
-function createAWSAccessKeyQ(){
+function createAWSAccessKeyQ(d){
   return {
-    type: 'input', name: 'aws_access_key', message:'Provide AWS_KEY:',
+    type: 'input', name: 'aws_access_key',
+    message:'Provide AWS_KEY:',
+    default: d,
     validate: function(value){
       let regex = /[A-Z0-9/+=]{20}(?![A-Z0-9/+=])/;
       var pass = value.match(regex);
@@ -34,9 +49,11 @@ function createAWSAccessKeyQ(){
   }
 }
 
-function createS3BucketPrefixQ(){
+function createS3BucketPrefixQ(d){
   return {
-    type: 'input', name: 'bucketPrefix', message:'Provide S3 URL prefix:',
+    type: 'input', name: 'bucketPrefix',
+    message:'Provide S3 URL prefix:',
+    default: d,
     validate: function(value){
       let regex = /^(?:http(s)?:\/\/)?[\w.-]+(?:\.[\w\.-]+)+[\w\-\._~:/?#[\]@!\$&'\(\)\*\+,;=.]+$/;
       var pass = value.match(regex);
@@ -48,9 +65,11 @@ function createS3BucketPrefixQ(){
   }
 }
 
-function assetsPathQ(){
+function assetsPathQ(d){
   return {
-    type: 'input', name: 'assetsFolder', message:'Provide local path to assets folder:',
+    type: 'input', name: 'assetsFolder',
+    message:'Provide local path to assets folder:',
+    default: d,
     validate: function(value){
 
       if (fs.existsSync(value)){
@@ -61,41 +80,57 @@ function assetsPathQ(){
   }
 }
 
-function newAssetsPathQ(){
+function newAssetsPathQ(d){
   return {
-    type: 'input', name: 'newAssetsFolder', message:'Provide local path where to move the assets:',
+    type: 'input', name: 'newAssetsFolder',
+    message:'Provide local path where to move the assets:',
     validate: function(value){
       if (fs.existsSync(value)){
         return true;
       }
       return 'The new folder needs to be an existing one. Please provide an existing path.';
     },
-    default: function(answers){
+    default: d !== undefined ? d : function(answers){
       return answers.assetsFolder;
     }
   }
 }
 
-function createConfigFile(cb){
+function inputToArray(value){
+  if (Array.isArray(value)){
+    return value;
+  }
+  return value.replace(/\s+/g, '').split(',');
+}
+
+function ingoreFileExtensionsQ(d){
+  return {
+    type: 'input', name: 'ignoreFileExtensions',
+    message:'Ignore files with these file extensions:',
+    default: d !== undefined ? d : [] ,
+    filter: inputToArray
+  }
+}
+
+function createConfigFile(cb, config){
   var questions = [];
   // ask for aws keys and secret
-  questions.push(createAWSSecretQ());
-  questions.push(createAWSAccessKeyQ());
+  questions.push(createAWSSecretQ(config.aws_secret));
+  questions.push(createAWSAccessKeyQ(config.aws_access_key));
   // ask for aws bucket prefix
-  questions.push(createS3BucketPrefixQ());
+  questions.push(createS3BucketPrefixQ(config.bucketPrefix));
   // ask for assets folder
-  questions.push(assetsPathQ());
+  questions.push(assetsPathQ(config.assetsFolder));
   // ask for new repository assets folder
-  questions.push(newAssetsPathQ());
+  questions.push(newAssetsPathQ(config.newAssetsFolder));
   // ask for asset files extensions to ignore
-  questions.push(ingoreFileExtensionsQ());
+  questions.push(ingoreFileExtensionsQ(config.ignoreFileExtensions));
 
   inquirer.prompt(questions).then(
     answers => {
       if(answers.newAssetsFolder === '') {
         answers.newAssetsFolder = answers.assetsFolder;
       }
-      console.log(answers);
       let data = JSON.stringify(answers);
       fs.writeFileSync(configPath, data)
     }
@@ -133,7 +168,6 @@ function parseFileNameURI(name){
   var match = name.match(regex);
   if (match == null){
     name = name.replace(/\ /g, "+");
-    console.log(name);
   }
   return name;
 }
@@ -179,12 +213,17 @@ function run(config){
     .catch(processError);
 }
 
+argv = parseArgs();
+//console.log(argv);
 // check for .asset-cloud.json
 try{
   var config = require(configPath);
   console.log(config);
-
+  // TODO check if `--reconfig` flag has been passed
+  if(argv.reconfig){
+    createConfigFile(console.log, config);
+  }
 } catch {
   console.log('No config file detected - creating one');
-  createConfigFile(console.log);
+  createConfigFile(console.log, {});
 }

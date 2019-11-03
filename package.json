@@ -25,6 +25,7 @@
   "dependencies": {
     "inquirer": "^7.0.0",
     "line-reader": "^0.4.0",
-    "recursive-readdir": "^2.2.2"
+    "recursive-readdir": "^2.2.2",
+    "yargs": "^14.2.0"
   }
 }
