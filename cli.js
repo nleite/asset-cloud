@@ -4,6 +4,8 @@ var recursive = require('recursive-readdir');
 var lineReader = require('line-reader');
 var inquirer = require('inquirer');
 var yargs = require('yargs');
+var child_process = require('child_process');
+
 const process = require('process');
 let configPath = './.asset-config.json';
 
@@ -52,10 +54,10 @@ function createAWSAccessKeyQ(d){
 function createS3BucketPrefixQ(d){
   return {
     type: 'input', name: 'bucketPrefix',
-    message:'Provide S3 URL prefix:',
-    default: d,
+    message:'Provide S3 buckt URL prefix:',
+    default: d !== undefined ? d : "https://<BUCKETNAME>.s3.<REGION>.amazonaws.com/<FOLDER>/",
     validate: function(value){
-      let regex = /^(?:http(s)?:\/\/)?[\w.-]+(?:\.[\w\.-]+)+[\w\-\._~:/?#[\]@!\$&'\(\)\*\+,;=.]+$/;
+      let regex = /^(?:http(s)?:\/\/)(?<BUCKETNAME>\w+)\.s3\.(?<REGION>[0-9a-zA-Z'-]+)\.amazonaws\.(?<DOMAIN>[a-zA-Z]+)(.*)$/;
       var pass = value.match(regex);
       if (pass){
         return true;
@@ -112,7 +114,7 @@ function ingoreFileExtensionsQ(d){
   }
 }
 
-function createConfigFile(cb, config){
+function buildQuestions(config){
   var questions = [];
   // ask for aws keys and secret
   questions.push(createAWSSecretQ(config.aws_secret));
@@ -125,26 +127,56 @@ function createConfigFile(cb, config){
   questions.push(newAssetsPathQ(config.newAssetsFolder));
   // ask for asset files extensions to ignore
   questions.push(ingoreFileExtensionsQ(config.ignoreFileExtensions));
+  return questions;
+}
 
+function checkInGitignore(){
+  // check if current directory is under git version control
+  var cmd = 'git rev-parse --is-inside-work-tree 2>/dev/null';
+  child_process.exec(cmd, (err, stdout, stderr) => {
+    if (err){
+      console.log('error executing git check: %s', err);
+      return;
+    }
+
+    if(JSON.parse(stdout)){
+      var fileContent = fs.readFileSync('.gitignore', 'utf8');
+      var regex = /\.asset-config\.json/;
+      if(!fileContent.match(regex)){
+        console.log('not Matched - appending');
+        appendConfigToGitignore();
+      }
+    }
+  });
+}
+
+function appendConfigToGitignore(){
+  var data = `
+# asset-cloud config file
+.asset-config.json
+`;
+  fs.appendFileSync('.gitignore', data);
+}
+
+function createConfigFile(cb, config){
+  var questions = buildQuestions(config);
   inquirer.prompt(questions).then(
     answers => {
       if(answers.newAssetsFolder === '') {
         answers.newAssetsFolder = answers.assetsFolder;
       }
+      // store config file locally
       let data = JSON.stringify(answers);
       fs.writeFileSync(configPath, data)
+      // add config file to .gitignore
+      checkInGitignore();
     }
   );
-  // store config file locally
-  // add config file to .gitignore
-  // stage new asset files and config file
   cb(null);
 }
 
-// check for aws cli credentials file
-// if present, ask for profile to be used
 
-// if no aws cli credentials config ask for aws key and scret
+// stage new asset files and config file
 
 // store those in ./asset-cloud folder
 
@@ -214,7 +246,6 @@ function run(config){
 }
 
 argv = parseArgs();
-//console.log(argv);
 // check for .asset-cloud.json
 try{
   var config = require(configPath);
