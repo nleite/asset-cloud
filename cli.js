@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// TODO - Allow keys to be stored encrypted using local ssh keys
 var fs = require('fs');
 var recursive = require('recursive-readdir');
 var lineReader = require('line-reader');
@@ -158,9 +159,9 @@ function appendConfigToGitignore(){
   fs.appendFileSync('.gitignore', data);
 }
 
-function createConfigFile(cb, config){
+async function createConfigFile(cb, config){
   var questions = buildQuestions(config);
-  inquirer.prompt(questions).then(
+  config = await inquirer.prompt(questions).then(
     answers => {
       if(answers.newAssetsFolder === '') {
         answers.newAssetsFolder = answers.assetsFolder;
@@ -170,9 +171,10 @@ function createConfigFile(cb, config){
       fs.writeFileSync(configPath, data)
       // add config file to .gitignore
       checkInGitignore();
+      return answers;
     }
   );
-  cb(null);
+  cb(config);
 }
 
 
@@ -213,7 +215,7 @@ function processFile(path){
   for(i=0; i< lines.length; i++){
     var match = lines[i].match(REGEX_MATCH);
     if(match !== null){
-      if( !ignoreFileExtensions.includes(match.groups.extension) ){
+      if(!config.ignoreFileExtensions.includes(match.groups.extension) ){
         updated = true;
         var name = parseFileNameURI(match.groups.name);
         var replaceWith = "".concat(awsBucketPrefix,match.groups.folder, name, match.groups.extension);
@@ -222,7 +224,6 @@ function processFile(path){
     }
   }
   if(updated){
-    //console.log(lines.join("\n"));
     fs.writeFileSync(path, lines.join("\n"));
   }
 }
@@ -249,12 +250,13 @@ argv = parseArgs();
 // check for .asset-cloud.json
 try{
   var config = require(configPath);
-  console.log(config);
-  // TODO check if `--reconfig` flag has been passed
   if(argv.reconfig){
-    createConfigFile(console.log, config);
+    createConfigFile(run, config);
+  } else {
+    run(config);
   }
-} catch {
-  console.log('No config file detected - creating one');
-  createConfigFile(console.log, {});
+
+} catch (err) {
+  console.log('No config file detected - creating one: %s', err);
+  createConfigFile(run, {});
 }
