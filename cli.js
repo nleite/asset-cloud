@@ -180,13 +180,6 @@ async function createConfigFile(cb, config){
 
 // stage new asset files and config file
 
-// store those in ./asset-cloud folder
-
-// ask for folder to check
-
-// store those in ./asset-cloud folder
-
-
 // sycn local assets folder with S3 bucket
 
 // check for asset folder includes and replace assets in code
@@ -194,7 +187,7 @@ async function createConfigFile(cb, config){
 let REGEX_MATCH=/(?<prefix>(\.\/|\/)?(\.\.\/)+assets\/)(?<folder>img|audio|animator)(?<name>\/.*?(\.+))(?<extension>.\w+)/i;
 let REGEX_REPLACE=/(?<prefix>(\.\/|\/)?(\.\.\/)+assets\/)/i;
 let awsBucketPrefix = 'https://moneymazeapp.s3.us-east-2.amazonaws.com/assets/';
-let ignorePaths = ['.DS_Store', '.git*', '*spec.ts'];
+let ignorePaths = ['.DS_Store', '.git*', '*spec.ts', 'node_modules/*'];
 let ignoreFileExtensions =  ['json'];
 
 function parseFileNameURI(name){
@@ -212,6 +205,8 @@ function processFile(path){
   var lines = fileContent.split("\n");
   var newFileContent = '';
   var updated = false;
+  console.log(path);
+  console.log(config.ignoreFileExtensions);
   for(i=0; i< lines.length; i++){
     var match = lines[i].match(REGEX_MATCH);
     if(match !== null){
@@ -240,7 +235,6 @@ function processFiles(files){
 
 function run(config){
   var folder = config.assetsFolder;
-  var ignorePaths = config.ignorePaths;
   recursive(folder, ignorePaths)
     .then(processFiles)
     .catch(processError);
