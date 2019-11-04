@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // TODO - Allow keys to be stored encrypted using local ssh keys
 var fs = require('fs');
+var p = require('path');
 var recursive = require('recursive-readdir');
 var lineReader = require('line-reader');
 var inquirer = require('inquirer');
@@ -9,6 +10,7 @@ var child_process = require('child_process');
 
 const process = require('process');
 let configPath = './.asset-config.json';
+let ignorePaths = ['.DS_Store', '.git*', '*spec.ts', 'node_modules'];
 
 function parseArgs(){
   return yargs.option(
@@ -64,22 +66,35 @@ function createS3BucketPrefixQ(d){
         return true;
       }
       return 'S3 URL prefix is invalid!';
+    },
+    filter: function(value){
+      if(!value.endsWith('/')){
+        return value.concat('/');
+      }
+      return value;
     }
   }
 }
 
 function assetsPathQ(d){
   return {
-    type: 'input', name: 'assetsFolder',
-    message:'Provide local path to assets folder:',
-    default: d,
-    validate: function(value){
-
-      if (fs.existsSync(value)){
-        return true;
+    type: 'input', name: 'assetsPath',
+    message:'Provide assets folder path:',
+    default: d !== undefined ? d : 'src/assets',
+    filter: function(value){
+      if(value.endsWith(p.sep)){
+        value = value.substr(0, value.length-1);
       }
-      return 'Provided local assets folder does not exist. Please provide an existing path.';
+      return value;
     }
+  }
+}
+
+function sourcePathQ(d){
+  return {
+    type: 'input', name: 'sourcePath',
+    message:'Provide source folder where assets are referenced:',
+    default: d !== undefined ? d : 'src',
   }
 }
 
@@ -87,15 +102,7 @@ function newAssetsPathQ(d){
   return {
     type: 'input', name: 'newAssetsFolder',
     message:'Provide local path where to move the assets:',
-    validate: function(value){
-      if (fs.existsSync(value)){
-        return true;
-      }
-      return 'The new folder needs to be an existing one. Please provide an existing path.';
-    },
-    default: d !== undefined ? d : function(answers){
-      return answers.assetsFolder;
-    }
+    default: d !== undefined ? d : 'assets-cloud',
   }
 }
 
@@ -118,10 +125,12 @@ function ingoreFileExtensionsQ(d){
 function buildQuestions(config){
   var questions = [];
   // ask for aws keys and secret
-  questions.push(createAWSSecretQ(config.aws_secret));
   questions.push(createAWSAccessKeyQ(config.aws_access_key));
+  questions.push(createAWSSecretQ(config.aws_secret));
   // ask for aws bucket prefix
   questions.push(createS3BucketPrefixQ(config.bucketPrefix));
+  // ask for the source folder
+  questions.push(sourcePathQ(config.assetsFolder));
   // ask for assets folder
   questions.push(assetsPathQ(config.assetsFolder));
   // ask for new repository assets folder
@@ -177,19 +186,6 @@ async function createConfigFile(cb, config){
   cb(config);
 }
 
-
-// stage new asset files and config file
-
-// sycn local assets folder with S3 bucket
-
-// check for asset folder includes and replace assets in code
-
-let REGEX_MATCH=/(?<prefix>(\.\/|\/)?(\.\.\/)+assets\/)(?<folder>img|audio|animator)(?<name>\/.*?(\.+))(?<extension>.\w+)/i;
-let REGEX_REPLACE=/(?<prefix>(\.\/|\/)?(\.\.\/)+assets\/)/i;
-let awsBucketPrefix = 'https://moneymazeapp.s3.us-east-2.amazonaws.com/assets/';
-let ignorePaths = ['.DS_Store', '.git*', '*spec.ts', 'node_modules/*'];
-let ignoreFileExtensions =  ['json'];
-
 function parseFileNameURI(name){
   var regex = /(\{+|\+)/;
   var match = name.match(regex);
@@ -199,22 +195,20 @@ function parseFileNameURI(name){
   return name;
 }
 
-
-function processFile(path){
-  var fileContent = fs.readFileSync(path, 'utf8');
-  var lines = fileContent.split("\n");
-  var newFileContent = '';
+function processFile(path, config){
+  var lines = fs.readFileSync(path, 'utf8').split("\n");
+  var assetFolder = config.assetsPath.split(p.sep).slice(-1)[0];
+  var pattern = `(?<prefix>(\\.\/|\/)?(\\.\\.\/)+${assetFolder}\/)(?<folder>\\w+)(?<name>\/\.*?(\\.+))(?<extension>.\\w+)`;
+  var regMatch = new RegExp(pattern, 'i');
   var updated = false;
-  console.log(path);
-  console.log(config.ignoreFileExtensions);
   for(i=0; i< lines.length; i++){
-    var match = lines[i].match(REGEX_MATCH);
+    var match = lines[i].match(regMatch);
     if(match !== null){
       if(!config.ignoreFileExtensions.includes(match.groups.extension) ){
         updated = true;
         var name = parseFileNameURI(match.groups.name);
-        var replaceWith = "".concat(awsBucketPrefix,match.groups.folder, name, match.groups.extension);
-        lines[i] = lines[i].replace(REGEX_MATCH, replaceWith);
+        var replaceWith = "".concat(config.bucketPrefix, match.groups.folder, name, match.groups.extension);
+        lines[i] = lines[i].replace(regMatch, replaceWith);
       }
     }
   }
@@ -227,16 +221,19 @@ function processError(err){
   console.log("hey, check this error: %s", err);
 }
 
-function processFiles(files){
-  if(files.length > 0 ){
-    files.forEach(function(file){processFile(file);});
-  }
-}
+// TODO:
+// - stage new asset files and config file
+// - sycn local assets folder with S3 bucket
+// - encrypt config file using local ssh keys
 
 function run(config){
-  var folder = config.assetsFolder;
-  recursive(folder, ignorePaths)
-    .then(processFiles)
+  recursive(config.sourcePath, ignorePaths)
+    .then((files) => {
+      if(files.length > 0 ){
+        files.forEach(function(file){
+          processFile(file, config);});
+      }
+    })
     .catch(processError);
 }
 
