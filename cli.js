@@ -100,7 +100,7 @@ function sourcePathQ(d){
 
 function newAssetsPathQ(d){
   return {
-    type: 'input', name: 'newAssetsFolder',
+    type: 'input', name: 'newAssetsPath',
     message:'Provide local path where to move the assets:',
     default: d !== undefined ? d : 'assets-cloud',
   }
@@ -130,11 +130,11 @@ function buildQuestions(config){
   // ask for aws bucket prefix
   questions.push(createS3BucketPrefixQ(config.bucketPrefix));
   // ask for the source folder
-  questions.push(sourcePathQ(config.assetsFolder));
+  questions.push(sourcePathQ(config.sourcePath));
   // ask for assets folder
-  questions.push(assetsPathQ(config.assetsFolder));
+  questions.push(assetsPathQ(config.assetsPath));
   // ask for new repository assets folder
-  questions.push(newAssetsPathQ(config.newAssetsFolder));
+  questions.push(newAssetsPathQ(config.newAssetsPath));
   // ask for asset files extensions to ignore
   questions.push(ingoreFileExtensionsQ(config.ignoreFileExtensions));
   return questions;
@@ -172,8 +172,8 @@ async function createConfigFile(cb, config){
   var questions = buildQuestions(config);
   config = await inquirer.prompt(questions).then(
     answers => {
-      if(answers.newAssetsFolder === '') {
-        answers.newAssetsFolder = answers.assetsFolder;
+      if(answers.newAssetsPath === '') {
+        answers.newAssetsPath = answers.assetsFolder;
       }
       // store config file locally
       let data = JSON.stringify(answers);
@@ -221,8 +221,36 @@ function processError(err){
   console.log("hey, check this error: %s", err);
 }
 
-// TODO:
+
 // - stage new asset files and config file
+function stageNewAssetsFolder(config){
+  // move all config.assetsPath folder into config.newAssetsPath
+  var ignore = [];
+  config.ignoreFileExtensions.forEach(x => {ignore.push('*'.concat(x))});
+  ignore = ignore.concat(ignorePaths);
+  console.log(ignore);
+  recursive(config.assetsPath, ignore).then(
+    function(files){
+      if (files.length > 0){
+        if(!fs.existsSync(config.newAssetsPath)){
+          fs.mkdirSync(config.newAssetsPath);
+        }
+        const simpleGit = require('simple-git')(config.assetsPath);
+        files.forEach(function(file){
+          var destination = config.newAssetsPath.concat(p.sep, p.basename(file));
+          try{
+            simpleGit.mv(file, destination);
+          } catch(err){
+            console.log("please check this error: %s", err);
+          }
+
+        })
+      }
+    }
+  ).catch(err => {console.log('waaatt: %s',err)});
+}
+
+// TODO:
 // - sycn local assets folder with S3 bucket
 // - encrypt config file using local ssh keys
 
@@ -235,6 +263,8 @@ function run(config){
       }
     })
     .catch(processError);
+
+  stageNewAssetsFolder(config);
 }
 
 argv = parseArgs();
