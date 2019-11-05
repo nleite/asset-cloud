@@ -217,7 +217,9 @@ function processFile(path, config){
 }
 
 function processError(err){
-  console.log("hey, check this error: %s", err);
+  if(err){
+    console.log("hey, check this error: %s", err);
+  }
 }
 
 
@@ -230,14 +232,19 @@ function stageNewAssetsFolder(config){
   recursive(config.assetsPath, ignore).then(
     function(files){
       if (files.length > 0){
-        if(!fs.existsSync(config.newAssetsPath)){
-          fs.mkdirSync(config.newAssetsPath);
-        }
-        const simpleGit = require('simple-git')(config.assetsPath);
+        const simpleGit = require('simple-git')(process.cwd());
+        fs.exists(config.newAssetsPath, (exists) => {
+          if(!exists){
+            fs.mkdir(config.newAssetsPath, processError);
+          }
+          //simpleGit.add(config.newAssetsPath);
+        });
         files.forEach(function(file){
           var destination = config.newAssetsPath.concat(p.sep, p.basename(file));
+          console.log(file);
+          console.log(destination);
           try{
-            //simpleGit.mv(file, destination);
+            simpleGit.mv(file, destination);
           } catch(err){
             processError(err);
           }
@@ -253,7 +260,8 @@ function stageNewAssetsFolder(config){
 // - encrypt config file using local ssh keys
 
 function run(config){
-  recursive(config.sourcePath, ignorePaths)
+  var ignore = ignorePaths.concat([config.assetsPath]);
+  recursive(config.sourcePath, ignore)
     .then((files) => {
       if(files.length > 0 ){
         files.forEach(function(file){
