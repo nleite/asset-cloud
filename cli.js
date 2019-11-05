@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// TODO - Allow keys to be stored encrypted using local ssh keys
 var fs = require('fs');
 var p = require('path');
 var recursive = require('recursive-readdir');
@@ -7,11 +6,10 @@ var lineReader = require('line-reader');
 var inquirer = require('inquirer');
 var yargs = require('yargs');
 var child_process = require('child_process');
-
 const process = require('process');
 let configPath = process.cwd().concat(p.sep,'.asset-config.json');
 let ignorePaths = ['.DS_Store', '.git*', '*spec.ts', 'node_modules'];
-
+const simpleGit = require('simple-git')(process.cwd());
 function parseArgs(){
   return yargs.option(
     'reconfig',{
@@ -213,6 +211,7 @@ function processFile(path, config){
   }
   if(updated){
     fs.writeFileSync(path, lines.join("\n"));
+    simpleGit.add(path);
   }
 }
 
@@ -232,20 +231,18 @@ function stageNewAssetsFolder(config){
   recursive(config.assetsPath, ignore).then(
     function(files){
       if (files.length > 0){
-        const simpleGit = require('simple-git')(process.cwd());
         fs.exists(config.newAssetsPath, (exists) => {
           if(!exists){
             fs.mkdir(config.newAssetsPath, processError);
           }
           //simpleGit.add(config.newAssetsPath);
         });
-        files.forEach(function(file){
+        files.forEach(async function(file){
           var destination = config.newAssetsPath.concat(p.sep, p.basename(file));
-          console.log(file);
-          console.log(destination);
           try{
-            simpleGit.mv(file, destination);
+            await simpleGit.mv(file, destination);
           } catch(err){
+            console.log("we can skip this");
             processError(err);
           }
 
@@ -258,14 +255,15 @@ function stageNewAssetsFolder(config){
 // TODO:
 // - sycn local assets folder with S3 bucket
 // - encrypt config file using local ssh keys
+// - move from console.log to file logging
 
 function run(config){
   var ignore = ignorePaths.concat([config.assetsPath]);
   recursive(config.sourcePath, ignore)
     .then((files) => {
       if(files.length > 0 ){
-        files.forEach(function(file){
-          processFile(file, config);});
+        files.forEach(async function(file){
+          await processFile(file, config);});
       }
     })
     .catch(processError);
