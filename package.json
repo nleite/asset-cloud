@@ -5,8 +5,7 @@
   "url": "https://github.com/nleite/asset-cloud",
   "main": "cli.js",
   "bin": "./cli.js",
-  "scripts": {
-  },
+  "scripts": {},
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nleite/asset-cloud.git"
