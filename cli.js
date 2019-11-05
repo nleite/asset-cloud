@@ -9,7 +9,7 @@ var yargs = require('yargs');
 var child_process = require('child_process');
 
 const process = require('process');
-let configPath = process.cwd().concat('/.asset-config.json');
+let configPath = process.cwd().concat(p.sep,'.asset-config.json');
 let ignorePaths = ['.DS_Store', '.git*', '*spec.ts', 'node_modules'];
 
 function parseArgs(){
