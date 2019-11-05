@@ -1,12 +1,11 @@
 {
   "name": "asset-cloud",
   "version": "0.0.1",
-  "description": "Small cli util that moves local asset references to a cloud storage provider (e.j. S3)",
+  "description": "Small cli util that moves local asset references to cloud provider",
   "url": "https://github.com/nleite/asset-cloud",
   "main": "cli.js",
   "bin": "./cli.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
     "type": "git",
