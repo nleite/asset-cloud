@@ -9,7 +9,7 @@ var yargs = require('yargs');
 var child_process = require('child_process');
 
 const process = require('process');
-let configPath = './.asset-config.json';
+let configPath = process.cwd().concat('/.asset-config.json');
 let ignorePaths = ['.DS_Store', '.git*', '*spec.ts', 'node_modules'];
 
 function parseArgs(){
@@ -237,7 +237,7 @@ function stageNewAssetsFolder(config){
         files.forEach(function(file){
           var destination = config.newAssetsPath.concat(p.sep, p.basename(file));
           try{
-            simpleGit.mv(file, destination);
+            //simpleGit.mv(file, destination);
           } catch(err){
             processError(err);
           }
@@ -276,6 +276,6 @@ try{
   }
 
 } catch (err) {
-  //console.log('No config file detected - creating one: %s', err);
+  console.log('No config file detected - creating one: %s', err);
   createConfigFile(run, {});
 }
