@@ -145,7 +145,7 @@ function checkInGitignore(){
   var cmd = 'git rev-parse --is-inside-work-tree 2>/dev/null';
   child_process.exec(cmd, (err, stdout, stderr) => {
     if (err){
-      console.log('error executing git check: %s', err);
+      processError(err);
       return;
     }
 
@@ -153,7 +153,6 @@ function checkInGitignore(){
       var fileContent = fs.readFileSync('.gitignore', 'utf8');
       var regex = /\.asset-config\.json/;
       if(!fileContent.match(regex)){
-        console.log('not Matched - appending');
         appendConfigToGitignore();
       }
     }
@@ -228,7 +227,6 @@ function stageNewAssetsFolder(config){
   var ignore = [];
   config.ignoreFileExtensions.forEach(x => {ignore.push('*'.concat(x))});
   ignore = ignore.concat(ignorePaths);
-  console.log(ignore);
   recursive(config.assetsPath, ignore).then(
     function(files){
       if (files.length > 0){
@@ -241,13 +239,13 @@ function stageNewAssetsFolder(config){
           try{
             simpleGit.mv(file, destination);
           } catch(err){
-            console.log("please check this error: %s", err);
+            processError(err);
           }
 
         })
       }
     }
-  ).catch(err => {console.log('waaatt: %s',err)});
+  ).catch(err => {processError(err)});
 }
 
 // TODO:
@@ -278,6 +276,6 @@ try{
   }
 
 } catch (err) {
-  console.log('No config file detected - creating one: %s', err);
+  //console.log('No config file detected - creating one: %s', err);
   createConfigFile(run, {});
 }
