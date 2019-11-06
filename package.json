@@ -1,11 +1,11 @@
 {
   "name": "asset-cloud",
   "version": "0.0.1",
-  "description": "Small cli util that moves Angular assets into a cloud storage provider (e.j. S3)",
+  "description": "Small cli util that moves local asset references to cloud provider",
+  "url": "https://github.com/nleite/asset-cloud",
   "main": "cli.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
+  "bin": "./cli.js",
+  "scripts": {},
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nleite/asset-cloud.git"
@@ -26,6 +26,7 @@
     "inquirer": "^7.0.0",
     "line-reader": "^0.4.0",
     "recursive-readdir": "^2.2.2",
+    "simple-git": "^1.126.0",
     "yargs": "^14.2.0"
   }
 }

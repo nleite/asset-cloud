@@ -1,17 +1,14 @@
 #!/usr/bin/env node
-// TODO - Allow keys to be stored encrypted using local ssh keys
 var fs = require('fs');
 var p = require('path');
 var recursive = require('recursive-readdir');
 var lineReader = require('line-reader');
 var inquirer = require('inquirer');
 var yargs = require('yargs');
-var child_process = require('child_process');
-
 const process = require('process');
-let configPath = './.asset-config.json';
+const cp = require('child_process');
+let configPath = process.cwd().concat(p.sep,'.asset-config.json');
 let ignorePaths = ['.DS_Store', '.git*', '*spec.ts', 'node_modules'];
-
 function parseArgs(){
   return yargs.option(
     'reconfig',{
@@ -100,7 +97,7 @@ function sourcePathQ(d){
 
 function newAssetsPathQ(d){
   return {
-    type: 'input', name: 'newAssetsFolder',
+    type: 'input', name: 'newAssetsPath',
     message:'Provide local path where to move the assets:',
     default: d !== undefined ? d : 'assets-cloud',
   }
@@ -130,34 +127,14 @@ function buildQuestions(config){
   // ask for aws bucket prefix
   questions.push(createS3BucketPrefixQ(config.bucketPrefix));
   // ask for the source folder
-  questions.push(sourcePathQ(config.assetsFolder));
+  questions.push(sourcePathQ(config.sourcePath));
   // ask for assets folder
-  questions.push(assetsPathQ(config.assetsFolder));
+  questions.push(assetsPathQ(config.assetsPath));
   // ask for new repository assets folder
-  questions.push(newAssetsPathQ(config.newAssetsFolder));
+  questions.push(newAssetsPathQ(config.newAssetsPath));
   // ask for asset files extensions to ignore
   questions.push(ingoreFileExtensionsQ(config.ignoreFileExtensions));
   return questions;
-}
-
-function checkInGitignore(){
-  // check if current directory is under git version control
-  var cmd = 'git rev-parse --is-inside-work-tree 2>/dev/null';
-  child_process.exec(cmd, (err, stdout, stderr) => {
-    if (err){
-      console.log('error executing git check: %s', err);
-      return;
-    }
-
-    if(JSON.parse(stdout)){
-      var fileContent = fs.readFileSync('.gitignore', 'utf8');
-      var regex = /\.asset-config\.json/;
-      if(!fileContent.match(regex)){
-        console.log('not Matched - appending');
-        appendConfigToGitignore();
-      }
-    }
-  });
 }
 
 function appendConfigToGitignore(){
@@ -166,20 +143,32 @@ function appendConfigToGitignore(){
 .asset-config.json
 `;
   fs.appendFileSync('.gitignore', data);
+  git.add('.gitignore');
+}
+
+function checkInGitignore(){
+  // check if current directory is under git version control
+  var fileContent = fs.readFileSync('.gitignore', 'utf8');
+  // check if gitignore already contains this entry
+  var regex = /\.asset-config\.json/;
+  if(!fileContent.match(regex)){
+    appendConfigToGitignore();
+  }
 }
 
 async function createConfigFile(cb, config){
   var questions = buildQuestions(config);
   config = await inquirer.prompt(questions).then(
     answers => {
-      if(answers.newAssetsFolder === '') {
-        answers.newAssetsFolder = answers.assetsFolder;
+      if(answers.newAssetsPath === '') {
+        answers.newAssetsPath = answers.assetsFolder;
       }
-      // store config file locally
-      let data = JSON.stringify(answers);
-      fs.writeFileSync(configPath, data)
-      // add config file to .gitignore
-      checkInGitignore();
+      git.checkIsRepo( function(err, isRepo){
+        if(isRepo){
+          // add config file to .gitignore
+          checkInGitignore();
+        }
+      });
       return answers;
     }
   );
@@ -214,32 +203,88 @@ function processFile(path, config){
   }
   if(updated){
     fs.writeFileSync(path, lines.join("\n"));
+    git.checkIsRepo((err, isRepo) => {
+      if(isRepo){git.add(path);}
+    });
   }
 }
 
 function processError(err){
-  console.log("hey, check this error: %s", err);
+  if(err){
+    console.log('hey, check this error: %s', err);
+  }
+}
+
+function fsMoveFile(file, destination){
+  var oldfilename = process.cwd().concat(p.sep, file);
+  var newfilename = process.cwd().concat(p.sep, destination);
+  fs.rename(oldfilename, newfilename, (err) =>{
+    if(err){
+      console.log('could not move files: %s', err);
+    }
+  });
+}
+
+function moveFile(file, config){
+  var destination = config.newAssetsPath.concat(p.sep, p.basename(file));
+  git.checkIsRepo((err, isRepo) => {
+    if(isRepo){
+      git.mv(file, destination, processError);
+      return;
+    }
+    fsMoveFile(file, destination)
+  });
+}
+
+
+// - stage new asset files and config file
+function moveAssetsToNewAssets(config){
+  // move all config.assetsPath folder into config.newAssetsPath
+  var ignore = [];
+  config.ignoreFileExtensions.forEach(x => {ignore.push('*'.concat(x))});
+  ignore = ignore.concat(ignorePaths);
+  recursive(config.assetsPath, ignore).then(
+    function(files){
+      if (files.length > 0){
+        fs.exists(config.newAssetsPath, (exists) => {
+          if(!exists){
+            fs.mkdir(config.newAssetsPath, processError);
+          }
+        });
+        // serial traversing
+        files.forEach(function(file){
+          moveFile(file, config);
+        });
+      }
+    },
+    processError
+  ).catch(err => {processError(err)});
 }
 
 // TODO:
-// - stage new asset files and config file
 // - sycn local assets folder with S3 bucket
 // - encrypt config file using local ssh keys
+// - move from console.log to file logging
 
 function run(config){
-  recursive(config.sourcePath, ignorePaths)
-    .then((files) => {
+  var ignore = ignorePaths.concat([config.assetsPath]);
+  recursive(config.sourcePath, ignore)
+    .then(async (files) => {
       if(files.length > 0 ){
-        files.forEach(function(file){
-          processFile(file, config);});
+        files.forEach(async function(file){
+          await processFile(file, config);});
       }
     })
     .catch(processError);
+
+  moveAssetsToNewAssets(config);
 }
 
 argv = parseArgs();
-// check for .asset-cloud.json
+const git = require('simple-git')(process.cwd());
+
 try{
+  // setting the git working directory
   var config = require(configPath);
   if(argv.reconfig){
     createConfigFile(run, config);
