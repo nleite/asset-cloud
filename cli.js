@@ -5,11 +5,10 @@ var recursive = require('recursive-readdir');
 var lineReader = require('line-reader');
 var inquirer = require('inquirer');
 var yargs = require('yargs');
-var child_process = require('child_process');
 const process = require('process');
+const cp = require('child_process');
 let configPath = process.cwd().concat(p.sep,'.asset-config.json');
 let ignorePaths = ['.DS_Store', '.git*', '*spec.ts', 'node_modules'];
-const simpleGit = require('simple-git')(process.cwd());
 function parseArgs(){
   return yargs.option(
     'reconfig',{
@@ -138,31 +137,23 @@ function buildQuestions(config){
   return questions;
 }
 
-function checkInGitignore(){
-  // check if current directory is under git version control
-  var cmd = 'git rev-parse --is-inside-work-tree 2>/dev/null';
-  child_process.exec(cmd, (err, stdout, stderr) => {
-    if (err){
-      processError(err);
-      return;
-    }
-
-    if(JSON.parse(stdout)){
-      var fileContent = fs.readFileSync('.gitignore', 'utf8');
-      var regex = /\.asset-config\.json/;
-      if(!fileContent.match(regex)){
-        appendConfigToGitignore();
-      }
-    }
-  });
-}
-
 function appendConfigToGitignore(){
   var data = `
 # asset-cloud config file
 .asset-config.json
 `;
   fs.appendFileSync('.gitignore', data);
+  git.add('.gitignore');
+}
+
+function checkInGitignore(){
+  // check if current directory is under git version control
+  var fileContent = fs.readFileSync('.gitignore', 'utf8');
+  // check if gitignore already contains this entry
+  var regex = /\.asset-config\.json/;
+  if(!fileContent.match(regex)){
+    appendConfigToGitignore();
+  }
 }
 
 async function createConfigFile(cb, config){
@@ -172,11 +163,12 @@ async function createConfigFile(cb, config){
       if(answers.newAssetsPath === '') {
         answers.newAssetsPath = answers.assetsFolder;
       }
-      // store config file locally
-      let data = JSON.stringify(answers);
-      fs.writeFileSync(configPath, data)
-      // add config file to .gitignore
-      checkInGitignore();
+      git.checkIsRepo( function(err, isRepo){
+        if(isRepo){
+          // add config file to .gitignore
+          checkInGitignore();
+        }
+      });
       return answers;
     }
   );
@@ -211,19 +203,42 @@ function processFile(path, config){
   }
   if(updated){
     fs.writeFileSync(path, lines.join("\n"));
-    simpleGit.add(path);
+    git.checkIsRepo((err, isRepo) => {
+      if(isRepo){git.add(path);}
+    });
   }
 }
 
 function processError(err){
   if(err){
-    console.log("hey, check this error: %s", err);
+    console.log('hey, check this error: %s', err);
   }
+}
+
+function fsMoveFile(file, destination){
+  var oldfilename = process.cwd().concat(p.sep, file);
+  var newfilename = process.cwd().concat(p.sep, destination);
+  fs.rename(oldfilename, newfilename, (err) =>{
+    if(err){
+      console.log('could not move files: %s', err);
+    }
+  });
+}
+
+function moveFile(file, config){
+  var destination = config.newAssetsPath.concat(p.sep, p.basename(file));
+  git.checkIsRepo((err, isRepo) => {
+    if(isRepo){
+      git.mv(file, destination, processError);
+      return;
+    }
+    fsMoveFile(file, destination)
+  });
 }
 
 
 // - stage new asset files and config file
-function stageNewAssetsFolder(config){
+function moveAssetsToNewAssets(config){
   // move all config.assetsPath folder into config.newAssetsPath
   var ignore = [];
   config.ignoreFileExtensions.forEach(x => {ignore.push('*'.concat(x))});
@@ -235,20 +250,14 @@ function stageNewAssetsFolder(config){
           if(!exists){
             fs.mkdir(config.newAssetsPath, processError);
           }
-          //simpleGit.add(config.newAssetsPath);
         });
-        files.forEach(async function(file){
-          var destination = config.newAssetsPath.concat(p.sep, p.basename(file));
-          try{
-            await simpleGit.mv(file, destination);
-          } catch(err){
-            console.log("we can skip this");
-            processError(err);
-          }
-
-        })
+        // serial traversing
+        files.forEach(function(file){
+          moveFile(file, config);
+        });
       }
-    }
+    },
+    processError
   ).catch(err => {processError(err)});
 }
 
@@ -260,7 +269,7 @@ function stageNewAssetsFolder(config){
 function run(config){
   var ignore = ignorePaths.concat([config.assetsPath]);
   recursive(config.sourcePath, ignore)
-    .then((files) => {
+    .then(async (files) => {
       if(files.length > 0 ){
         files.forEach(async function(file){
           await processFile(file, config);});
@@ -268,12 +277,14 @@ function run(config){
     })
     .catch(processError);
 
-  stageNewAssetsFolder(config);
+  moveAssetsToNewAssets(config);
 }
 
 argv = parseArgs();
-// check for .asset-cloud.json
+const git = require('simple-git')(process.cwd());
+
 try{
+  // setting the git working directory
   var config = require(configPath);
   if(argv.reconfig){
     createConfigFile(run, config);
