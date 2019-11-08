@@ -1,10 +1,16 @@
 {
   "name": "asset-cloud",
-  "version": "0.0.2",
+  "version": "0.0.4",
   "description": "Small cli util that moves local asset references to cloud provider",
   "url": "https://github.com/nleite/asset-cloud",
-  "main": "cli.js",
-  "bin": "./cli.js",
+  "main": "./lib/cli.js",
+  "bin": {
+    "asset-cloud": "./lib/cli.js"
+  },
+  "files": [
+      "/lib",
+      "LICENSE"
+  ],
   "scripts": {},
   "repository": {
     "type": "git",
